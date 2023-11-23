@@ -4,7 +4,7 @@ import torch.nn as nn
 from src.model.conv_block import ConvBlock
 
 
-def test_conv_block() -> None:
+def test_conv_block():
     """Test ConvBlock class."""
     conv_block = ConvBlock(1, 1, kernel_size=3, stride=1, padding=1)
     assert isinstance(conv_block, nn.Module), "ConvBlock is not a Module subclass."
