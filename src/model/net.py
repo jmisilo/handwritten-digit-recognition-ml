@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .conv_block import ConvBlock
+from .layers import ConvBlock
 
 
 class Model(nn.Module):
