@@ -12,12 +12,19 @@ class Config:
     Project's main config.
     """
 
-    dropout: float = 0.15
     seed: int = 909
-    batch_size: int = 32
     epochs: int = 150
+    batch_size: int = 32
+    train_size: float = 0.87
     lr: float = 3e-4
-    train_size: float = 0.84
-    val_size: float = 0.11
+    dropout: float = 0.15
     k: float = 0.25
     num_workers: int = 2
+    checkpoint_every_n_epochs: int = 10
+    checkpoint_dir: str = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "weights", "checkpoints")
+    )
+
+    data_dir: str = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "data")
+    )

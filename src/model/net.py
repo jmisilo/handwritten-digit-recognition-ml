@@ -31,13 +31,12 @@ class Model(nn.Module):
 
         assert 0 <= p < 1, "Dropout probability must be between 0 and 1."
 
-        self.c1 = ConvBlock(1, 64, kernel_size=4, stride=2)
-        self.c2 = ConvBlock(64, 128, kernel_size=3, stride=1)
-        self.c3 = ConvBlock(128, 256, kernel_size=2, stride=1)
-        self.c4 = ConvBlock(256, 256, kernel_size=2, stride=1)
+        self.c1 = ConvBlock(1, 16, kernel_size=4, stride=2)
+        self.c2 = ConvBlock(16, 32, kernel_size=3, stride=2)
+        self.c3 = ConvBlock(32, 1, kernel_size=2, stride=1)
 
-        self.fc1 = nn.Linear(256 * 9 * 9, 1024)
-        self.fc2 = nn.Linear(1024, 256)
+        self.fc1 = nn.Linear(64 * 5 * 5, 512)
+        self.fc2 = nn.Linear(512, 256)
         self.fc_out = nn.Linear(256, 10)
 
         self.dropout = nn.Dropout(p)
@@ -55,7 +54,6 @@ class Model(nn.Module):
         x = self.dropout(self.c1(x))
         x = self.dropout(self.c2(x))
         x = self.dropout(self.c3(x))
-        x = self.dropout(self.c4(x))
 
         x = x.view(x.shape[0], -1)
 
