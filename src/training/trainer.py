@@ -8,7 +8,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from ..utils import ErrorMessages, Metrics, is_positive_int
+from ..utils import is_positive_int
+from ..utils.enum import ErrorMessages, Metrics
 
 
 class MNISTTrainer:
@@ -25,8 +26,8 @@ class MNISTTrainer:
         val_data: torch.utils.data.Dataset = None,
         scheduler: optim.lr_scheduler = None,
         scaler: torch.cuda.amp.GradScaler = None,
-        clip_grad_norm: float = None,
-        checkpoint_every_n_epochs: int = None,
+        clip_grad_norm: float | None = None,
+        checkpoint_every_n_epochs: int | None = None,
         checkpoint_dir: str = None,
         load_checkpoint_file: str = None,
         weights_dir: str = None,
@@ -48,8 +49,8 @@ class MNISTTrainer:
             val_data (torch.utils.data.Dataset, optional): Validation data. Defaults to None.
             scheduler (torch.optim.lr_scheduler._LRScheduler, optional): Learning rate scheduler. Defaults to None.
             scaler (torch.cuda.amp.GradScaler, optional): Gradient scaler. Defaults to None.
-            clip_grad_norm (float, optional): Maximum gradient norm. Defaults to None.
-            checkpoint_every_n_epochs (int, optional): Checkpoint every n epochs. Defaults to None.
+            clip_grad_norm (float | None, optional): Maximum gradient norm. Defaults to None.
+            checkpoint_every_n_epochs (int | None, optional): Checkpoint every n epochs. Defaults to None.
             checkpoint_dir (str, optional): Checkpoint directory. Defaults to None.
             load_checkpoint_file (str, optional): Checkpoint file to load. Defaults to None.
             weights_dir (str, optional): Weights directory. Defaults to None.
@@ -78,8 +79,6 @@ class MNISTTrainer:
 
         self.model = model.to(self.device)
 
-        self._init_training_loaders(train_data, val_data)
-
         self.epochs = epochs
         self.start_epoch = start_epoch
         self.current_epoch = start_epoch
@@ -95,6 +94,7 @@ class MNISTTrainer:
         self.compound_loss = 0
 
         self.__validate_params()
+        self._init_training_loaders(train_data, val_data)
 
     def __validate_params(self) -> None:
         """
@@ -128,9 +128,11 @@ class MNISTTrainer:
         self.__validate_epoch()
         self.__validate_metrics()
 
-        is_positive_int(
-            self.checkpoint_every_n_epochs, custom_message="checkpoint_every_n_epochs"
-        )
+        if self.checkpoint_every_n_epochs is not None:
+            is_positive_int(
+                self.checkpoint_every_n_epochs,
+                custom_message="checkpoint_every_n_epochs",
+            )
 
     def __validate_metrics(self) -> None:
         """
@@ -164,11 +166,11 @@ class MNISTTrainer:
         """
         is_positive_int(self.epochs, custom_message=ErrorMessages.INVALID_EPOCH.value)
 
-        is_positive_int(
-            self.start_epoch, custom_message=ErrorMessages.INVALID_START_EPOCH.value
-        )
-
-        if self.start_epoch >= self.epochs:
+        if (
+            self.start_epoch < 0
+            or not isinstance(self.start_epoch, int)
+            or self.start_epoch >= self.epochs
+        ):
             raise ValueError(ErrorMessages.INVALID_START_EPOCH.value)
 
     def _accuracy(self, batch_steps: int) -> float:
@@ -181,6 +183,8 @@ class MNISTTrainer:
         Returns:
             float: Accuracy.
         """
+        is_positive_int(batch_steps, name="batch_steps")
+
         return self.correct / ((batch_steps + 1) * self.batch_size) * 100
 
     def _loss(self, batch_steps: int) -> float:
@@ -193,6 +197,8 @@ class MNISTTrainer:
         Returns:
             float: Average loss.
         """
+        is_positive_int(batch_steps, name="batch_steps")
+
         return self.compound_loss / (batch_steps + 1)
 
     def _current_lr(self) -> float:
@@ -442,7 +448,9 @@ class MNISTTrainer:
 
             current_date = datetime.datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
 
-            if not ((epoch + 1) % self.checkpoint_every_n_epochs):
+            if self.checkpoint_every_n_epochs and not (
+                (epoch + 1) % self.checkpoint_every_n_epochs
+            ):
                 torch.save(
                     {
                         "epoch": self.current_epoch,
