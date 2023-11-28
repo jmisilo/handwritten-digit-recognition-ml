@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from ..utils import is_positive_int
 from ..utils.enum import ErrorMessages, Metrics
+from . import EarlyStopper
 
 
 class MNISTTrainer:
@@ -36,6 +37,9 @@ class MNISTTrainer:
         batch_size: int = 32,
         num_workers: int = 0,
         pin_memory: bool = False,
+        use_early_stopper: bool = False,
+        patience: int = 1,
+        min_delta: float = 0,
         device: str = "cpu",
         metrics: List[Metrics] = [Metrics.ACCURACY],
     ) -> None:
@@ -92,6 +96,12 @@ class MNISTTrainer:
 
         self.correct = 0
         self.compound_loss = 0
+
+        self.early_stopper = (
+            EarlyStopper(patience=patience, min_delta=min_delta)
+            if use_early_stopper and val_data is not None
+            else None
+        )
 
         self.__validate_params()
         self._init_training_loaders(train_data, val_data)
@@ -309,6 +319,55 @@ class MNISTTrainer:
 
         return core
 
+    def _save_checkpoint(
+        self, current_date: str, train_metrics: dict, val_metrics: dict
+    ) -> None:
+        """
+        Save checkpoint.
+
+        Args:
+            current_date (str): Current date.
+            train_metrics (dict): Training metrics.
+            val_metrics (dict): Validation metrics.
+
+        Returns:
+            None
+        """
+
+        if self.checkpoint_every_n_epochs and not (
+            (self.current_epoch + 1) % self.checkpoint_every_n_epochs
+        ):
+            torch.save(
+                {
+                    "epoch": self.current_epoch,
+                    "model_state_dict": self.model.state_dict(),
+                    "optimizer_state_dict": self.optimizer.state_dict(),
+                    "train_metrics": train_metrics,
+                    "val_metrics": val_metrics,
+                },
+                os.path.join(
+                    self.checkpoint_dir,
+                    f"model_{self.current_epoch}_{current_date}.pth",
+                ),
+            )
+
+    def _save_final_model(self, current_date: str) -> None:
+        """
+        Save weights of final model, in TorchScript format.
+
+        Args:
+            current_date (str): Current date.
+
+        Returns:
+            None
+        """
+        # save in TorchScript format
+        model_scripted = torch.jit.script(self.model)
+
+        model_scripted.save(
+            os.path.join(self.weights_dir, f"model_scripted_{current_date}.pt")
+        )
+
     def training_step(self, data: torch.Tensor, target: torch.Tensor) -> None:
         """
         Training step.
@@ -429,55 +488,6 @@ class MNISTTrainer:
 
         return self._metrics(batch_steps=batch_idx)
 
-    def _save_checkpoint(
-        self, current_date: str, train_metrics: dict, val_metrics: dict
-    ) -> None:
-        """
-        Save checkpoint.
-
-        Args:
-            current_date (str): Current date.
-            train_metrics (dict): Training metrics.
-            val_metrics (dict): Validation metrics.
-
-        Returns:
-            None
-        """
-
-        if self.checkpoint_every_n_epochs and not (
-            (self.current_epoch + 1) % self.checkpoint_every_n_epochs
-        ):
-            torch.save(
-                {
-                    "epoch": self.current_epoch,
-                    "model_state_dict": self.model.state_dict(),
-                    "optimizer_state_dict": self.optimizer.state_dict(),
-                    "train_metrics": train_metrics,
-                    "val_metrics": val_metrics,
-                },
-                os.path.join(
-                    self.checkpoint_dir,
-                    f"model_{self.current_epoch}_{current_date}.pth",
-                ),
-            )
-
-    def _save_final_model(self, current_date: str) -> None:
-        """
-        Save weights of final model, in TorchScript format.
-
-        Args:
-            current_date (str): Current date.
-
-        Returns:
-            None
-        """
-        # save in TorchScript format
-        model_scripted = torch.jit.script(self.model)
-
-        model_scripted.save(
-            os.path.join(self.weights_dir, f"model_scripted_{current_date}.pt")
-        )
-
     def train(self):
         """
         Training loop.
@@ -499,6 +509,11 @@ class MNISTTrainer:
             current_date = datetime.datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
 
             self._save_checkpoint(current_date, train_metrics, val_metrics)
+
+            if self.early_stopper is not None:
+                if self.early_stopper.early_stop(val_metrics["loss"]):
+                    print("Early stopping!")
+                    break
 
             yield train_metrics, val_metrics
 
