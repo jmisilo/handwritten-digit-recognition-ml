@@ -21,9 +21,6 @@ data = MNIST(
     transform=Compose([ToTensor(), RandomRotation(90)]),
 )
 
-test_data = MNIST(
-    download=True, root=config.data_dir, train=False, transform=Compose([ToTensor()])
-)
 
 train_size = int(len(data) * config.train_size)
 val_size = len(data) - train_size
@@ -71,21 +68,3 @@ if __name__ == "__main__":
             "Validation metrics: ",
             val_metrics,
         )
-
-    # # test loop
-    # test_loss = 0
-    # test_correct = 0
-
-    # for data, target in test_loader:
-    #     data, target = data.to(device), target.to(device)
-
-    #     output = model(data)
-
-    #     test_loss += criterion(output, target).item()
-
-    #     pred = output.argmax(dim=1, keepdim=True)
-
-    #     test_correct += pred.eq(target.view_as(pred)).sum().item()
-
-    # test_loss /= len(test_loader.dataset)
-    # accuracy = 100.0 * test_correct / len(test_loader.dataset)
