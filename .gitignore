@@ -4,5 +4,6 @@ __pycache__/
 .vscode/
 /weights/
 /wandb/
-
+*.ipynb
 *.env
+.pytest_cache/

@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from src.model.net import Model
+from src.model import Model
 
 
 def test_net():

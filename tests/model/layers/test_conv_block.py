@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from src.model.conv_block import ConvBlock
+from src.model.layers import ConvBlock
 
 
 def test_conv_block():
