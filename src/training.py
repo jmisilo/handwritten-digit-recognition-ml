@@ -1,16 +1,18 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from dotenv import load_dotenv
 from torch.utils.data import random_split
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, RandomRotation, ToTensor
 
 from model import Model
 from training import Config, LRWarmup, MNISTTrainer
-from utils import Metrics
+from utils.enum import Metrics
+
+load_dotenv()
 
 config = Config()
-
 
 is_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if is_cuda else "cpu")
@@ -27,13 +29,12 @@ val_size = len(data) - train_size
 
 train_data, val_data = random_split(data, [train_size, val_size])
 
-
 if __name__ == "__main__":
     model = Model(p=config.dropout).to(device)
 
     lr_warmup = LRWarmup(epochs=config.epochs, max_lr=config.lr, k=config.k)
 
-    optimizer = optim.Adam(model.parameters(), lr=config.lr)
+    optimizer = optim.Adam(model.parameters(), config.lr)
     criterion = nn.CrossEntropyLoss()
 
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_warmup)
@@ -53,7 +54,7 @@ if __name__ == "__main__":
         weights_dir=config.weights_dir,
         epochs=config.epochs,
         batch_size=config.batch_size,
-        num_workers=config.num_workers,
+        num_workers=config.num_workers if is_cuda else 0,
         pin_memory=is_cuda,
         device=device,
         metrics=[Metrics.ACCURACY],

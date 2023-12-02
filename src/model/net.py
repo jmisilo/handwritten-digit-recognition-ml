@@ -62,7 +62,7 @@ class Model(nn.Module):
                 nn.init.ones_(m.weight)
                 nn.init.zeros_(m.bias)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> nn.Module:
         """
         Return the output of the model.
 

@@ -8,8 +8,10 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from ..utils import is_positive_int
-from ..utils.enum import ErrorMessages, Metrics
+import wandb
+from utils import is_positive_int
+from utils.enum import ErrorMessages, Metrics
+
 from . import EarlyStopper
 
 
@@ -106,6 +108,11 @@ class MNISTTrainer:
         self.__validate_params()
         self._init_training_loaders(train_data, val_data)
 
+        self.__wandb_api_key = os.environ.get("WANDB_API_KEY")
+        self.__wandb_project_name = os.environ.get(
+            "WANDB_PROJECT_NAME", "handwritten-digit-recognition-ml"
+        )
+
     def __validate_params(self) -> None:
         """
         Validate parameters.
@@ -193,9 +200,10 @@ class MNISTTrainer:
         Returns:
             float: Accuracy.
         """
+        batch_steps += 1
         is_positive_int(batch_steps, name="batch_steps")
 
-        return self.correct / ((batch_steps + 1) * self.batch_size) * 100
+        return self.correct / (batch_steps * self.batch_size) * 100
 
     def _loss(self, batch_steps: int) -> float:
         """
@@ -207,9 +215,10 @@ class MNISTTrainer:
         Returns:
             float: Average loss.
         """
+        batch_steps += 1
         is_positive_int(batch_steps, name="batch_steps")
 
-        return self.compound_loss / (batch_steps + 1)
+        return self.compound_loss / batch_steps
 
     def _current_lr(self) -> float:
         """
@@ -309,18 +318,19 @@ class MNISTTrainer:
         Returns:
             str: Epoch description.
         """
-        core = f"Epoch {self.current_epoch + 1} | Loss: {self._loss(batch_idx):.3f}"
+        core = f"Epoch {self.current_epoch + 1} | Loss: {self._loss(batch_idx + 1):.3f}"
 
         if Metrics.ACCURACY in self.metrics:
             core += f" | Accuracy: {self._accuracy(batch_idx):.2f}%"
 
-        if self.scheduler is not None:
-            core += f" | LR: {self.optimizer.param_groups[0]['lr']:.9f}"
-
         return core
 
     def _save_checkpoint(
-        self, current_date: str, train_metrics: dict, val_metrics: dict
+        self,
+        current_date: str,
+        train_metrics: dict,
+        val_metrics: dict,
+        run: wandb.run = None,
     ) -> None:
         """
         Save checkpoint.
@@ -329,6 +339,7 @@ class MNISTTrainer:
             current_date (str): Current date.
             train_metrics (dict): Training metrics.
             val_metrics (dict): Validation metrics.
+            run (wandb.Run): Wandb run.
 
         Returns:
             None
@@ -337,6 +348,11 @@ class MNISTTrainer:
         if self.checkpoint_every_n_epochs and not (
             (self.current_epoch + 1) % self.checkpoint_every_n_epochs
         ):
+            checkpoint_path = os.path.join(
+                self.checkpoint_dir,
+                f"model_{self.current_epoch}_{current_date}.pth",
+            )
+
             torch.save(
                 {
                     "epoch": self.current_epoch,
@@ -345,28 +361,103 @@ class MNISTTrainer:
                     "train_metrics": train_metrics,
                     "val_metrics": val_metrics,
                 },
-                os.path.join(
-                    self.checkpoint_dir,
-                    f"model_{self.current_epoch}_{current_date}.pth",
-                ),
+                checkpoint_path,
             )
 
-    def _save_final_model(self, current_date: str) -> None:
+            if self.__wandb_api_key is not None:
+                art = wandb.Artifact(
+                    name=f"checkpoint_{self.__wandb_project_name}_{self.current_epoch}_{current_date}",
+                    type="checkpoint",
+                    description="Model checkpoint",
+                )
+
+                art.add_file(checkpoint_path)
+
+                run.log_artifact(art)
+
+    def _save_final_model(self, current_date: str, run: wandb.run = None) -> None:
         """
         Save weights of final model, in TorchScript format.
 
         Args:
             current_date (str): Current date.
+            run (wandb.Run): Wandb run.
 
         Returns:
             None
         """
-        # save in TorchScript format
-        model_scripted = torch.jit.script(self.model)
 
-        model_scripted.save(
-            os.path.join(self.weights_dir, f"model_scripted_{current_date}.pt")
+        self.model.eval()
+        # save in TorchScript format
+        model_scripted = torch.jit.trace(
+            self.model, (torch.rand(1, 1, 28, 28).to(self.device))
         )
+        model_path = os.path.join(self.weights_dir, f"model_scripted_{current_date}.pt")
+
+        model_scripted.save(model_path)
+
+        if self.__wandb_api_key is not None:
+            art = wandb.Artifact(
+                name=f"model_{self.__wandb_project_name}_{current_date}",
+                type="model",
+                description="Model weights",
+            )
+
+            art.add_file(model_path)
+
+            run.log_artifact(art)
+
+    def _wandb_log_metrics(self, train_metrics: dict, val_metrics: dict) -> None:
+        """
+        Log metrics to wandb.
+
+        Args:
+            train_metrics (dict): Training metrics.
+            val_metrics (dict): Validation metrics.
+
+        Returns:
+            None
+        """
+
+        print("logging to wandb")
+        wandb.log(
+            {
+                "train/loss": train_metrics["loss"],
+                **(
+                    {"train/accuracy": train_metrics["accuracy"]}
+                    if Metrics.ACCURACY in self.metrics
+                    else {}
+                ),
+                **(
+                    {"train/lr": train_metrics["lr"]}
+                    if self.scheduler is not None
+                    else {}
+                ),
+                **(
+                    {"val/loss": val_metrics["loss"]} if val_metrics is not None else {}
+                ),
+                **(
+                    {"val/accuracy": val_metrics["accuracy"]}
+                    if val_metrics is not None and Metrics.ACCURACY in self.metrics
+                    else {}
+                ),
+            }
+        )
+
+    def __wandb_log_prediction_table(
+        self, data: torch.Tensor, target: torch.Tensor, output: torch.Tensor
+    ) -> None:
+        if self.__wandb_api_key is not None and not self.current_epoch:
+            table = wandb.Table(columns=["image", "correct", "prediction", "score"])
+            for i in range(len(data)):
+                table.add_data(
+                    wandb.Image(data[i].to("cpu").numpy() * 255),
+                    target[i].to("cpu").item(),
+                    output[i].argmax(dim=0).to("cpu").item(),
+                    output[i].softmax(dim=0).max(dim=0).values.to("cpu").item(),
+                )
+
+            wandb.log({"val/prediction_table": table}, commit=False)
 
     def training_step(self, data: torch.Tensor, target: torch.Tensor) -> None:
         """
@@ -430,6 +521,8 @@ class MNISTTrainer:
         with torch.no_grad():
             output = self.model(data)
 
+        self.__wandb_log_prediction_table(data, target, output)
+
         self.compound_loss += self.criterion(output, target).item()
 
         pred = output.argmax(dim=1, keepdim=True)
@@ -449,13 +542,15 @@ class MNISTTrainer:
             enumerate(self.train_loader), total=len(self.train_loader), position=0
         )
 
-        loop.set_description(f"Epoch: {self.current_epoch + 1} | Loss: ---")
+        loop.set_description(f"Epoch: {self.current_epoch + 1}")
 
         self.model.train()
         for batch_idx, (data, target) in loop:
             self.training_step(data, target)
 
             loop.set_description(self._epoch_description(batch_idx))
+
+            loop.set_postfix(LR=self._current_lr())
 
         if self.scheduler is not None:
             self.scheduler.step()
@@ -488,7 +583,7 @@ class MNISTTrainer:
 
         return self._metrics(batch_steps=batch_idx)
 
-    def train(self):
+    def train(self, config=None):
         """
         Training loop.
 
@@ -497,6 +592,17 @@ class MNISTTrainer:
             dict: Validation metrics.
         """
         self._load_checkpoint()
+
+        use_wandb = self.__wandb_api_key is not None
+
+        run = None
+        if use_wandb:
+            run = wandb.init(
+                project=self.__wandb_project_name,
+                config=config.__dict__ if config is not None else {},
+            )
+
+            run.watch(self.model, log="all")
 
         for epoch in range(self.start_epoch, self.epochs):
             self.current_epoch = epoch
@@ -508,7 +614,10 @@ class MNISTTrainer:
 
             current_date = datetime.datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
 
-            self._save_checkpoint(current_date, train_metrics, val_metrics)
+            if use_wandb:
+                self._wandb_log_metrics(train_metrics, val_metrics)
+
+            self._save_checkpoint(current_date, train_metrics, val_metrics, run)
 
             if self.early_stopper is not None:
                 if self.early_stopper.early_stop(val_metrics["loss"]):
@@ -517,4 +626,5 @@ class MNISTTrainer:
 
             yield train_metrics, val_metrics
 
-        self._save_final_model(current_date)
+        self._save_final_model(current_date, run)
+        run.finish()

@@ -3,10 +3,10 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, ToTensor
 
-from ..training import Config
+from training import Config
 
 
-def test_model(
+def model_test(
     model: torch.nn.Module,
     criterion: torch.nn.Module,
     is_cuda: bool,

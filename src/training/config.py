@@ -14,14 +14,16 @@ class Config:
 
     seed: int = 909
     epochs: int = 150
+    epochs: int = 6
     batch_size: int = 32
     train_size: float = 0.87
-    lr: float = 3e-4
+    lr: float = 5.5e-4
     dropout: float = 0.15
     k: float = 0.25
     num_workers: int = 2
     clip_grad_norm: float = 1.3
     checkpoint_every_n_epochs: int = 10
+    checkpoint_every_n_epochs: int = 2
     checkpoint_dir: str = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "weights", "checkpoints")
     )
