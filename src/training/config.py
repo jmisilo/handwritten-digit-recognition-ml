@@ -12,9 +12,8 @@ class Config:
     Project's main config.
     """
 
-    seed: int = 909
-    epochs: int = 150
-    epochs: int = 6
+    seed: int = 453
+    epochs: int = 60
     batch_size: int = 32
     train_size: float = 0.87
     lr: float = 5.5e-4

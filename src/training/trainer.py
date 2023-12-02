@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import wandb
-from utils import is_positive_int
+from utils import is_positive_int, logger
 from utils.enum import ErrorMessages, Metrics
 
 from . import EarlyStopper
@@ -243,7 +243,7 @@ class MNISTTrainer:
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-            print(f"Loaded checkpoint: {self.load_checkpoint_file}")
+            logger.info(f"Loaded checkpoint: {self.load_checkpoint_file}")
 
     def _init_training_loaders(
         self,
@@ -419,30 +419,33 @@ class MNISTTrainer:
             None
         """
 
-        print("logging to wandb")
-        wandb.log(
-            {
-                "train/loss": train_metrics["loss"],
-                **(
-                    {"train/accuracy": train_metrics["accuracy"]}
-                    if Metrics.ACCURACY in self.metrics
-                    else {}
-                ),
-                **(
-                    {"train/lr": train_metrics["lr"]}
-                    if self.scheduler is not None
-                    else {}
-                ),
-                **(
-                    {"val/loss": val_metrics["loss"]} if val_metrics is not None else {}
-                ),
-                **(
-                    {"val/accuracy": val_metrics["accuracy"]}
-                    if val_metrics is not None and Metrics.ACCURACY in self.metrics
-                    else {}
-                ),
-            }
-        )
+        if self.__wandb_api_key is not None:
+            logger.info("Logging to wandb")
+            wandb.log(
+                {
+                    "train/loss": train_metrics["loss"],
+                    **(
+                        {"train/accuracy": train_metrics["accuracy"]}
+                        if Metrics.ACCURACY in self.metrics
+                        else {}
+                    ),
+                    **(
+                        {"train/lr": train_metrics["lr"]}
+                        if self.scheduler is not None
+                        else {}
+                    ),
+                    **(
+                        {"val/loss": val_metrics["loss"]}
+                        if val_metrics is not None
+                        else {}
+                    ),
+                    **(
+                        {"val/accuracy": val_metrics["accuracy"]}
+                        if val_metrics is not None and Metrics.ACCURACY in self.metrics
+                        else {}
+                    ),
+                }
+            )
 
     def __wandb_log_prediction_table(
         self, data: torch.Tensor, target: torch.Tensor, output: torch.Tensor
@@ -458,6 +461,45 @@ class MNISTTrainer:
                 )
 
             wandb.log({"val/prediction_table": table}, commit=False)
+
+    def __scaler_backprop(self, loss: torch.Tensor) -> None:
+        """
+        Backpropagate using the scaler.
+
+        Args:
+            loss (torch.Tensor): Loss.
+
+        Returns:
+            None
+        """
+
+        self.scaler.scale(loss).backward()
+        self.scaler.unscale_(self.optimizer)
+
+        torch.nn.utils.clip_grad_norm_(
+            self.model.parameters(), max_norm=self.clip_grad_norm
+        )
+
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+
+    def __backprop(self, loss: torch.Tensor) -> None:
+        """
+        Backpropagate.
+
+        Args:
+            loss (torch.Tensor): Loss.
+
+        Returns:
+            None
+        """
+        loss.backward()
+
+        torch.nn.utils.clip_grad_norm_(
+            self.model.parameters(), max_norm=self.clip_grad_norm
+        )
+
+        self.optimizer.step()
 
     def training_step(self, data: torch.Tensor, target: torch.Tensor) -> None:
         """
@@ -485,21 +527,9 @@ class MNISTTrainer:
         self.correct += pred.eq(target.view_as(pred)).sum().item()
 
         if self.scaler is not None:
-            self.scaler.scale(loss).backward()
-            self.scaler.unscale_(self.optimizer)
+            self.__scaler_backprop(loss)
         else:
-            loss.backward()
-
-        if self.clip_grad_norm is not None:
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), max_norm=self.clip_grad_norm
-            )
-
-        if self.scaler is not None:
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-        else:
-            self.optimizer.step()
+            self.__backprop(loss)
 
     def validation_step(self, data: torch.Tensor, target: torch.Tensor) -> None:
         """
@@ -583,6 +613,19 @@ class MNISTTrainer:
 
         return self._metrics(batch_steps=batch_idx)
 
+    def _init_wandb_run(self, config: dict) -> wandb.run:
+        if self.__wandb_api_key is not None:
+            run = wandb.init(
+                project=self.__wandb_project_name,
+                config=config.__dict__ if config is not None else {},
+            )
+
+            run.watch(self.model, log="all")
+
+            return run
+
+        return None
+
     def train(self, config=None):
         """
         Training loop.
@@ -592,17 +635,7 @@ class MNISTTrainer:
             dict: Validation metrics.
         """
         self._load_checkpoint()
-
-        use_wandb = self.__wandb_api_key is not None
-
-        run = None
-        if use_wandb:
-            run = wandb.init(
-                project=self.__wandb_project_name,
-                config=config.__dict__ if config is not None else {},
-            )
-
-            run.watch(self.model, log="all")
+        run = self._init_wandb_run(config)
 
         for epoch in range(self.start_epoch, self.epochs):
             self.current_epoch = epoch
@@ -614,14 +647,13 @@ class MNISTTrainer:
 
             current_date = datetime.datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
 
-            if use_wandb:
-                self._wandb_log_metrics(train_metrics, val_metrics)
+            self._wandb_log_metrics(train_metrics, val_metrics)
 
             self._save_checkpoint(current_date, train_metrics, val_metrics, run)
 
             if self.early_stopper is not None:
                 if self.early_stopper.early_stop(val_metrics["loss"]):
-                    print("Early stopping!")
+                    logger.info("Early stopping!")
                     break
 
             yield train_metrics, val_metrics

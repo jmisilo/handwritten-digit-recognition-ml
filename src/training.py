@@ -8,6 +8,7 @@ from torchvision.transforms import Compose, RandomRotation, ToTensor
 
 from model import Model
 from training import Config, LRWarmup, MNISTTrainer
+from utils import logger
 from utils.enum import Metrics
 
 load_dotenv()
@@ -60,12 +61,7 @@ if __name__ == "__main__":
         metrics=[Metrics.ACCURACY],
     )
 
-    print("Training...")
-    for train_metrics, val_metrics in trainer.train():
-        print(
-            "Training metrics: ",
-            train_metrics,
-            "\n",
-            "Validation metrics: ",
-            val_metrics,
-        )
+    logger.info("Starting training...")
+    for epoch, (train_metrics, val_metrics) in enumerate(trainer.train()):
+        pass
+    logger.info("Training finished.")
