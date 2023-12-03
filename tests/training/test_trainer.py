@@ -100,8 +100,6 @@ def test_trainer_params_validator():
         trainer
     ), "criterion has not been created correctly, with criterion as nn.CrossEntropyLoss()."
 
-    print(trainer_constructor_params | {"criterion": None})
-
     with pytest.raises(ValueError) as e:
         trainer = MNISTTrainer(
             **trainer_constructor_params | {"criterion": None},

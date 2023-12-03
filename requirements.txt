@@ -6,3 +6,4 @@ torchvision
 -f https://download.pytorch.org/whl/torch_stable.html
 torchaudio
 tqdm
+wandb

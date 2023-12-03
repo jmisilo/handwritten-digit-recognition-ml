@@ -24,6 +24,6 @@ def test_lr_warmup():
 
     assert lr_warmup(0) == 0, "lr_warmup(0) is not correct"
     assert (
-        lr_warmup(config.epochs * config.k) == config.lr
+        lr_warmup(config.epochs * config.k) == 1
     ), "lr_warmup(max_point) is not correct"
     assert lr_warmup(config.epochs) == 0, "lr_warmup(epochs) is not correct"

@@ -1,16 +1,21 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from dotenv import load_dotenv
 from torch.utils.data import random_split
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, RandomRotation, ToTensor
 
 from model import Model
-from training import Config, LRWarmup, MNISTTrainer
-from utils import Metrics
+from training import Config, LRWarmup, MNISTTrainer, init_parser_args
+from utils import logger
+from utils.enum import Metrics
+
+load_dotenv()
+
+args = init_parser_args()
 
 config = Config()
-
 
 is_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if is_cuda else "cpu")
@@ -27,14 +32,18 @@ val_size = len(data) - train_size
 
 train_data, val_data = random_split(data, [train_size, val_size])
 
-
 if __name__ == "__main__":
-    model = Model(p=config.dropout).to(device)
+    model = Model(p=args.dropout or config.dropout).to(device)
 
-    lr_warmup = LRWarmup(epochs=config.epochs, max_lr=config.lr, k=config.k)
+    lr = args.lr or config.lr
+    epochs = args.epochs or config.epochs
 
-    optimizer = optim.Adam(model.parameters(), lr=config.lr)
+    optimizer = optim.Adam(model.parameters(), lr)
     criterion = nn.CrossEntropyLoss()
+
+    lr_warmup = LRWarmup(
+        epochs=epochs, max_lr=optimizer.defaults["lr"], k=config.k
+    )
 
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_warmup)
     scaler = torch.cuda.amp.GradScaler()
@@ -51,20 +60,15 @@ if __name__ == "__main__":
         checkpoint_every_n_epochs=config.checkpoint_every_n_epochs,
         checkpoint_dir=config.checkpoint_dir,
         weights_dir=config.weights_dir,
-        epochs=config.epochs,
-        batch_size=config.batch_size,
-        num_workers=config.num_workers,
+        epochs=epochs,
+        batch_size=args.batch_size or config.batch_size,
+        num_workers=(args.num_workers or config.num_workers) if is_cuda else 0,
         pin_memory=is_cuda,
         device=device,
         metrics=[Metrics.ACCURACY],
     )
 
-    print("Training...")
-    for train_metrics, val_metrics in trainer.train():
-        print(
-            "Training metrics: ",
-            train_metrics,
-            "\n",
-            "Validation metrics: ",
-            val_metrics,
-        )
+    logger.info("Starting training...")
+    for epoch, (train_metrics, val_metrics) in enumerate(trainer.train()):
+        pass
+    logger.info("Training finished.")
