@@ -7,12 +7,9 @@ from torchvision.transforms import Compose, ToTensor
 
 from evaluate import init_parser_args
 from training import Config
-from utils import logger
+from utils import device, is_cuda, logger
 
 config = Config()
-
-is_cuda = torch.cuda.is_available()
-device = torch.device("cuda" if is_cuda else "cpu")
 
 
 args = init_parser_args()

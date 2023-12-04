@@ -8,7 +8,7 @@ from torchvision.transforms import Compose, RandomRotation, ToTensor
 
 from model import Model
 from training import Config, LRWarmup, MNISTTrainer, init_parser_args
-from utils import logger
+from utils import device, is_cuda, logger
 from utils.enum import Metrics
 
 load_dotenv()
@@ -17,8 +17,6 @@ args = init_parser_args()
 
 config = Config()
 
-is_cuda = torch.cuda.is_available()
-device = torch.device("cuda" if is_cuda else "cpu")
 
 data = MNIST(
     download=True,
@@ -41,9 +39,7 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr)
     criterion = nn.CrossEntropyLoss()
 
-    lr_warmup = LRWarmup(
-        epochs=epochs, max_lr=optimizer.defaults["lr"], k=config.k
-    )
+    lr_warmup = LRWarmup(epochs=epochs, max_lr=optimizer.defaults["lr"], k=config.k)
 
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_warmup)
     scaler = torch.cuda.amp.GradScaler()

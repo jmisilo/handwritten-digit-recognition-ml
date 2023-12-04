@@ -6,6 +6,7 @@ from PIL import Image
 from torchvision import transforms
 
 from training import Config
+from utils import device, is_cuda
 
 config = Config()
 
@@ -29,9 +30,6 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-
-is_cuda = torch.cuda.is_available()
-device = torch.device("cuda" if is_cuda else "cpu")
 
 model_path = args.model_path or os.path.join(
     config.weights_dir, os.listdir(config.weights_dir)[-1]
