@@ -366,7 +366,7 @@ class MNISTTrainer:
 
             if self.__wandb_api_key is not None:
                 art = wandb.Artifact(
-                    name=f"checkpoint_{self.__wandb_project_name}_{self.current_epoch}_{current_date}",
+                    name=f"checkpoint_{self.__wandb_project_name}",
                     type="checkpoint",
                     description="Model checkpoint",
                 )
@@ -398,7 +398,7 @@ class MNISTTrainer:
 
         if self.__wandb_api_key is not None:
             art = wandb.Artifact(
-                name=f"model_{self.__wandb_project_name}_{current_date}",
+                name=f"model_{self.__wandb_project_name}",
                 type="model",
                 description="Model weights",
             )
